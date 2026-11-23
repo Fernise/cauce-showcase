@@ -1,0 +1,235 @@
+@import "tailwindcss";
+
+/*
+ * Cauce visual identity — "Cal y picón" (see docs/design.md).
+ * Whitewash paper, volcanic-black ink, one signal colour (almagre) for gaps,
+ * azufre for "waiting", mar for "flowing again / covered".
+ */
+
+@theme {
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
+
+  /* Paper (cal) */
+  --color-cal: #f2efe8;
+  --color-cal-claro: #fbfaf6;
+  --color-cal-hondo: #e8e4da;
+  /* Ink (picón) */
+  --color-picon: #191816;
+  --color-picon-2: #45423c;
+  --color-picon-3: #6b675e;
+  --color-picon-4: #9c978b;
+  /* Rules */
+  --color-linea: #d8d3c7;
+  --color-linea-suave: #e6e2d8;
+  --color-linea-fuerte: #b5afa1;
+  /* Signal: something is missing (sin cubrir, alta, destructive) */
+  --color-almagre: #a8361c;
+  --color-almagre-claro: #e0623f;
+  --color-almagre-tinte: #f6e4dc;
+  /* Waiting (esperando respuesta, media, en curso) */
+  --color-azufre: #c98a12;
+  --color-azufre-claro: #e3a72f;
+  --color-azufre-texto: #7a5100;
+  --color-azufre-tinte: #f6eacb;
+  /* Flowing / covered / links / focus */
+  --color-mar: #1d4f6e;
+  --color-mar-claro: #6fa6c8;
+  --color-mar-tinte: #dce7ec;
+
+  /* Legacy scales remapped onto the palette so older markup stays on-brand. */
+  --color-brand-50: #eef3f5;
+  --color-brand-100: #dce7ec;
+  --color-brand-200: #b9cfda;
+  --color-brand-500: #3b7598;
+  --color-brand-600: #1d4f6e;
+  --color-brand-700: #173f58;
+  --color-brand-800: #112f42;
+
+  --color-slate-50: #f7f5f0;
+  --color-slate-100: #edeae2;
+  --color-slate-200: #dfdace;
+  --color-slate-300: #c9c3b5;
+  --color-slate-400: #9c978b;
+  --color-slate-500: #6b675e;
+  --color-slate-600: #55514a;
+  --color-slate-700: #45423c;
+  --color-slate-800: #2c2a26;
+  --color-slate-900: #191816;
+
+  --color-red-50: #faede8;
+  --color-red-100: #f6e4dc;
+  --color-red-200: #ebc3b4;
+  --color-red-500: #c4492a;
+  --color-red-600: #a8361c;
+  --color-red-700: #8e2c16;
+  --color-red-800: #6f2312;
+
+  --color-amber-50: #fbf3e0;
+  --color-amber-100: #f6eacb;
+  --color-amber-200: #ebd49a;
+  --color-amber-300: #e0bd66;
+  --color-amber-400: #d9a33a;
+  --color-amber-500: #c98a12;
+  --color-amber-600: #a8720c;
+  --color-amber-700: #8a5d05;
+  --color-amber-800: #7a5100;
+  --color-amber-900: #5c3d00;
+
+  --color-sky-50: #eef3f5;
+  --color-sky-100: #dce7ec;
+  --color-sky-600: #1d4f6e;
+  --color-sky-700: #173f58;
+  --color-sky-900: #112f42;
+
+  --color-emerald-50: #eef3f5;
+  --color-emerald-100: #dce7ec;
+  --color-emerald-200: #b9cfda;
+  --color-emerald-400: #6fa6c8;
+  --color-emerald-500: #3b7598;
+  --color-emerald-600: #1d4f6e;
+  --color-emerald-700: #173f58;
+  --color-emerald-800: #112f42;
+  --color-emerald-900: #0c2331;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 5px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--color-cal);
+  color: var(--color-picon);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-picon);
+  color: var(--color-cal-claro);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-mar);
+  outline-offset: 2px;
+}
+
+a,
+button,
+summary {
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+summary {
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---------- Type helpers ---------- */
+
+/* Condensed signage voice: labels, tablero, numerals. */
+@utility cond {
+  font-stretch: 80%;
+}
+@utility cond-x {
+  font-stretch: 68%;
+}
+/* People's words (messages received or about to be sent, expert notes). */
+@utility voz {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-size: 1.0625rem;
+  line-height: 1.45;
+}
+@utility num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-stretch: 80%;
+}
+@utility eyebrow {
+  font-stretch: 80%;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-picon-3);
+}
+
+/* ---------- Surfaces ---------- */
+
+@utility card {
+  @apply rounded-sm border border-linea bg-cal-claro;
+}
+/* Black departure-board band. */
+@utility tablero {
+  @apply rounded-sm bg-picon text-cal;
+}
+
+/* ---------- Buttons (≥44 px tall on touch, 38 px on desktop) ---------- */
+
+@utility btn {
+  @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-sm px-4 text-[0.9375rem] leading-tight font-semibold whitespace-nowrap select-none disabled:cursor-not-allowed disabled:opacity-55 sm:min-h-[2.375rem] sm:text-sm;
+}
+@utility btn-primary {
+  @apply btn bg-picon text-cal-claro hover:bg-picon-2 active:bg-black;
+}
+@utility btn-secondary {
+  @apply btn border border-linea-fuerte bg-cal-claro text-picon hover:border-picon-3 hover:bg-cal-hondo;
+}
+@utility btn-ghost {
+  @apply btn text-picon-2 hover:bg-cal-hondo hover:text-picon;
+}
+@utility btn-danger {
+  @apply btn border border-almagre/45 bg-cal-claro text-almagre hover:border-almagre hover:bg-almagre-tinte;
+}
+@utility btn-whatsapp {
+  @apply btn bg-[#25d366] text-picon hover:bg-[#1fc15c];
+}
+
+/* ---------- Forms ---------- */
+
+@utility input {
+  @apply min-h-11 w-full rounded-sm border border-linea-fuerte bg-cal-claro px-3 py-2 text-base text-picon placeholder:text-picon-4 focus:border-mar focus:outline-2 focus:outline-offset-0 focus:outline-mar/25 sm:min-h-10 sm:text-sm;
+}
+@utility label {
+  @apply mb-1.5 block text-xs leading-4 font-semibold tracking-[0.08em] text-picon-3 uppercase;
+  font-stretch: 80%;
+}
+@utility h-section {
+  @apply text-[0.8125rem] leading-5 font-bold tracking-[0.07em] text-picon uppercase;
+  font-stretch: 80%;
+}
+
+/* Text link in the mar colour. */
+@utility link {
+  @apply font-medium text-mar underline decoration-mar/35 underline-offset-[3px] hover:decoration-mar;
+}
+
+/* Row inside a ruled list: comfortable tap target, hover = paper shade. */
+@utility fila {
+  @apply flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-cal-hondo/60;
+}
