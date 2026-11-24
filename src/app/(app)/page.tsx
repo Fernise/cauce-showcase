@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session.ts";
-import { activeCases, dashboardStats, directory, recentActivity } from "@/lib/queries.ts";
+import { activeCases, dashboardStats, directory, recentActivity, orgTimezone } from "@/lib/queries.ts";
 import { all } from "@/lib/db.ts";
 import { formatDateLong, formatDateRelative, formatTimestamp, weekdayName, isoWeekday } from "@/lib/dates.ts";
 import { INCIDENT_SELECT, type IncidentRow } from "@/lib/incidents.ts";
@@ -12,6 +12,7 @@ export const metadata = { title: "Panel" };
 
 export default async function Dashboard() {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const stats = dashboardStats(user.orgId);
   const cases = activeCases(user.orgId, stats.today);
   const incidents = all<IncidentRow>(
@@ -100,7 +101,7 @@ export default async function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[0.9375rem] font-semibold">{i.title}</div>
                         <div className="truncate text-sm text-picon-3">
-                          {i.location_name ?? i.client_name ?? "Sin centro"} · {formatTimestamp(i.created_at)}
+                          {i.location_name ?? i.client_name ?? "Sin centro"} · {formatTimestamp(i.created_at, tz)}
                           {i.status === "en_curso" ? " · en curso" : ""}
                         </div>
                       </div>
@@ -120,7 +121,7 @@ export default async function Dashboard() {
           </section>
           <section>
             <SectionHead title="Actividad reciente" aside={<Link href="/actividad" className="link text-sm">Ver todo</Link>} className="mb-3" />
-            <ActivityList items={activity} />
+            <ActivityList tz={tz} items={activity} />
           </section>
         </div>
       </div>

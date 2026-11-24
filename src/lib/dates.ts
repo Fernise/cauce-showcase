@@ -108,7 +108,7 @@ export function formatRange(start: string, end: string, today: string): string {
 }
 
 /** SQLite datetime('now') is UTC "YYYY-MM-DD HH:MM:SS" → org-local "HH:MM" / relative label. */
-export function formatTimestamp(ts: string, tz = DEFAULT_TZ, now = new Date()): string {
+export function formatTimestamp(ts: string, tz: string, now = new Date()): string {
   const d = new Date(ts.replace(" ", "T") + "Z");
   const day = todayIn(tz, d);
   const time = nowTimeIn(tz, d);

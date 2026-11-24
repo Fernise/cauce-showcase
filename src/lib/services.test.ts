@@ -43,7 +43,7 @@ const form = (fields: Record<string, string | string[]>) => {
 test("create generates shifts from today through the end of next ISO week", () => {
   const { id, clientId, generation } = svc.createTemplate(org, loc, input(), "Coord", clock);
   assert.equal(clientId, client);
-  assert.deepEqual(generation, { created: 5, updated: 0, cancelled: 0 });
+  assert.deepEqual(generation, { created: 5, updated: 0, cancelled: 0, cases: 0 });
   const s = shiftsOf(id);
   assert.deepEqual(s.map((x) => x.date), ["2026-11-25", "2026-11-27", "2026-11-30", "2026-12-02", "2026-12-04"]);
   assert.ok(s.every((x) => x.employee_id === ana && x.status === "scheduled" && x.start === "07:00" && x.end === "11:00"));
@@ -90,7 +90,7 @@ test("removed weekdays cancel case-less shifts, new weekdays create shifts", () 
   run("INSERT INTO coverage_cases (org_id, shift_id) VALUES (?, ?)", org, withCase.id);
   const { generation } = svc.updateTemplate(org, id, input({ name: "Dias", weekdays: [4] }), "Coord", clock);
   // Thu 26 Nov + Thu 3 Dec created; Wed 25 and Mon 30 cancelled; Wed 2 Dec has a case → kept as is.
-  assert.deepEqual(generation, { created: 2, updated: 0, cancelled: 2 });
+  assert.deepEqual(generation, { created: 2, updated: 0, cancelled: 2, cases: 0 });
   assert.deepEqual(shiftsOf(id).map((s) => [s.date, s.status]), [
     ["2026-11-25", "cancelled"], ["2026-11-26", "scheduled"], ["2026-11-30", "cancelled"], ["2026-12-02", "scheduled"], ["2026-12-03", "scheduled"],
   ]);
@@ -100,7 +100,7 @@ test("shifts that already ended today are past; later today is future", () => {
   const { id } = svc.createTemplate(org, loc, input({ name: "Hoy", weekdays: [3], start: "07:00", end: "09:00" }), "Coord", { today: TODAY, time: "10:00" });
   assert.deepEqual(shiftsOf(id).map((s) => s.date), ["2026-12-02"], "today's 07–09 shift is already over at 10:00, not created");
   const r = svc.updateTemplate(org, id, input({ name: "Hoy", weekdays: [3], start: "07:00", end: "12:00" }), "Coord", { today: TODAY, time: "10:00" });
-  assert.deepEqual(r.generation, { created: 1, updated: 1, cancelled: 0 }, "today's now ends at 12:00 → created as it's still future; Dec 2 updated");
+  assert.deepEqual(r.generation, { created: 1, updated: 1, cancelled: 0, cases: 0 }, "today's now ends at 12:00 → created as it's still future; Dec 2 updated");
 });
 
 test("remove cancels future case-less shifts, keeps history, deletes the template", () => {
@@ -183,4 +183,88 @@ test("templateFit warns about availability, skills, overlaps and contract hours"
   assert.deepEqual(self, ["A Pili le falta: Llaves / alarma."], "only the location skill she lacks; no overlap/hours warning against itself");
   const fresh = emp("Fresca", org, "llaves", 30);
   assert.deepEqual(svc.templateFit(org, { employeeId: fresh, weekdays: [1], start: "06:30", end: "07:00", skills: [], locationId: loc }), [], "a fitting employee gets no warnings");
+});
+
+// ---------- T-017: rolling window · T-018: absence-aware generation ----------
+
+test("rollShiftWindow only adds missing shifts as the window moves and leaves existing ones alone", () => {
+  const o = run("INSERT INTO organizations (name) VALUES ('Roll')");
+  const c = run("INSERT INTO clients (org_id, name) VALUES (?, 'C')", o);
+  const l = run("INSERT INTO locations (org_id, client_id, name) VALUES (?, ?, 'Oficina')", o, c);
+  const e = emp("Eva", o, "");
+  const { id } = svc.createTemplate(o, l, input({ weekdays: [1, 2, 3, 4, 5], defaultEmployeeId: e }), "test", clock);
+  const before = shiftsOf(id);
+  assert.equal(before.at(-1)!.date, "2026-12-04"); // Friday of next week
+
+  // Hand-edited shift (e.g. time moved) must survive a roll.
+  run("UPDATE shifts SET start = '08:00' WHERE id = ?", before[0].id);
+  const g = svc.rollShiftWindow(o, { today: "2026-12-01" }); // Tuesday of the following week
+  assert.equal(g.created, 5); // 7–11 Dec
+  const after = shiftsOf(id);
+  assert.equal(after.at(-1)!.date, "2026-12-11");
+  assert.equal(after.find((s) => s.id === before[0].id)!.start, "08:00");
+  assert.equal(svc.rollShiftWindow(o, { today: "2026-12-01" }).created, 0, "idempotent");
+  assert.ok(get("SELECT 1 FROM activity WHERE org_id = ? AND type = 'shifts.rolled'", o));
+});
+
+test("rollShiftWindow never touches other organisations", () => {
+  const o = run("INSERT INTO organizations (name) VALUES ('Solo')");
+  const theirs = get<{ n: number }>("SELECT COUNT(*) AS n FROM shifts WHERE org_id <> ?", o)!.n;
+  svc.rollShiftWindow(o, { today: "2027-01-04" });
+  assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM shifts WHERE org_id <> ?", o)!.n, theirs);
+});
+
+test("a generated shift for someone already absent is uncovered with a case linked to the absence", () => {
+  const o = run("INSERT INTO organizations (name) VALUES ('Abs')");
+  const c = run("INSERT INTO clients (org_id, name) VALUES (?, 'C')", o);
+  const l = run("INSERT INTO locations (org_id, client_id, name) VALUES (?, ?, 'Clínica')", o, c);
+  const e = emp("Flor", o, "");
+  // Absent Mon 7 – Wed 9 Dec, registered before those shifts exist.
+  const absence = run(
+    "INSERT INTO absences (org_id, employee_id, start_date, end_date, reason_category) VALUES (?, ?, '2026-12-07', '2026-12-09', 'enfermedad')",
+    o, e,
+  );
+  run("INSERT INTO absences (org_id, employee_id, start_date, end_date, reason_category, status) VALUES (?, ?, '2026-12-10', '2026-12-10', 'otro', 'cancelled')", o, e);
+  const { id } = svc.createTemplate(o, l, input({ weekdays: [1, 2, 3, 4, 5], defaultEmployeeId: e }), "test", clock);
+  const g = svc.rollShiftWindow(o, { today: "2026-12-01" });
+  assert.equal(g.cases, 3);
+
+  const byDate = new Map(shiftsOf(id).map((s) => [s.date, s]));
+  for (const d of ["2026-12-07", "2026-12-08", "2026-12-09"]) {
+    const s = byDate.get(d)!;
+    assert.equal(s.employee_id, null);
+    assert.equal(s.status, "uncovered");
+    const cs = get<{ absence_id: number; original_employee_id: number; status: string }>("SELECT * FROM coverage_cases WHERE shift_id = ?", s.id)!;
+    assert.deepEqual([cs.absence_id, cs.original_employee_id, cs.status], [absence, e, "open"]);
+  }
+  // Cancelled absence and days outside the range: normal shifts.
+  for (const d of ["2026-12-04", "2026-12-10", "2026-12-11"]) assert.equal(byDate.get(d)!.employee_id, e);
+  assert.equal(svc.rollShiftWindow(o, { today: "2026-12-01" }).cases, 0, "no duplicate cases");
+});
+
+test("assigning an absent person as titular of an existing service opens cases for the absent days", () => {
+  const o = run("INSERT INTO organizations (name) VALUES ('Swap')");
+  const c = run("INSERT INTO clients (org_id, name) VALUES (?, 'C')", o);
+  const l = run("INSERT INTO locations (org_id, client_id, name) VALUES (?, ?, 'Hotel')", o, c);
+  const a = emp("Gala", o, "");
+  const b = emp("Hugo", o, "");
+  run("INSERT INTO absences (org_id, employee_id, start_date, end_date, reason_category) VALUES (?, ?, '2026-11-30', '2026-11-30', 'personal')", o, b);
+  const { id } = svc.createTemplate(o, l, input({ weekdays: [1], defaultEmployeeId: a }), "test", clock);
+  const g = svc.updateTemplate(o, id, input({ weekdays: [1], defaultEmployeeId: b }), "test", clock).generation;
+  assert.equal(g.cases, 1);
+  const shifts = shiftsOf(id);
+  assert.equal(shifts.find((s) => s.date === "2026-11-30")!.status, "uncovered");
+  assert.equal(shifts.find((s) => s.date === "2026-12-07")?.employee_id ?? b, b);
+});
+
+test("T-021#6: a deactivated titular gets no new shifts; they are generated uncovered", () => {
+  const o = run("INSERT INTO organizations (name) VALUES ('Gone')");
+  const c = run("INSERT INTO clients (org_id, name) VALUES (?, 'C')", o);
+  const l = run("INSERT INTO locations (org_id, client_id, name) VALUES (?, ?, 'Nave')", o, c);
+  const e = emp("Ida", o, "");
+  const { id } = svc.createTemplate(o, l, input({ weekdays: [1], defaultEmployeeId: e }), "test", clock);
+  run("UPDATE employees SET active = 0 WHERE id = ?", e);
+  svc.rollShiftWindow(o, { today: "2026-12-08" });
+  const added = shiftsOf(id).find((s) => s.date === "2026-12-14")!;
+  assert.deepEqual([added.employee_id, added.status], [null, "uncovered"]);
 });

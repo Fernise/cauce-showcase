@@ -1,3 +1,4 @@
+import { orgTimezone } from "@/lib/queries.ts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MessageCircle } from "lucide-react";
@@ -16,6 +17,7 @@ export const metadata = { title: "Incidencia" };
 
 export default async function IncidentPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { id } = await params;
   const i = getIncident(user.orgId, Number(id));
   if (!i) notFound();
@@ -37,7 +39,7 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={{ href: "/incidencias", label: "Incidencias" }}
         title={i.title}
-        subtitle={`${INCIDENT_LABELS[i.type]} · creada ${formatTimestamp(i.created_at)}`}
+        subtitle={`${INCIDENT_LABELS[i.type]} · creada ${formatTimestamp(i.created_at, tz)}`}
         actions={<div className="flex gap-5"><StatusBadge map={SEVERITY} status={i.severity} /><StatusBadge map={INCIDENT_STATUS} status={i.status} /></div>}
       />
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
@@ -68,7 +70,7 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
               </form>
             ) : (
               <div className="mt-3 text-sm">
-                <p className="flex flex-wrap items-center gap-x-2 text-picon-2"><StatusBadge map={INCIDENT_STATUS} status="resuelta" /> {i.resolved_at ? formatTimestamp(i.resolved_at) : ""}{i.resolution ? ` · ${i.resolution}` : ""}</p>
+                <p className="flex flex-wrap items-center gap-x-2 text-picon-2"><StatusBadge map={INCIDENT_STATUS} status="resuelta" /> {i.resolved_at ? formatTimestamp(i.resolved_at, tz) : ""}{i.resolution ? ` · ${i.resolution}` : ""}</p>
                 <form action={incidentStatusAction} className="mt-2">
                   <input type="hidden" name="id" value={i.id} />
                   <SubmitButton className="btn-ghost" name="status" value="abierta">Reabrir</SubmitButton>
@@ -88,7 +90,7 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
 
           <section>
             <SectionHead title="Historial" className="mb-1" />
-            <ActivityList items={timeline} linkEntities={false} />
+            <ActivityList tz={tz} items={timeline} linkEntities={false} />
             <form action={incidentNoteAction} className="mt-3 flex gap-2">
               <input type="hidden" name="id" value={i.id} />
               <input name="note" className="input" placeholder="Añadir nota interna…" required />

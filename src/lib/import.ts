@@ -2,7 +2,7 @@
 // Columns (header row required, order free): nombre; telefono; email; zona; horas; cualificaciones; disponibilidad
 // disponibilidad examples: "L-V 06:00-15:00", "L-D 06:00-22:00", "L,X,V 14:00-20:00"
 
-import { run, tx } from "./db.ts";
+import { newReportToken, run, tx } from "./db.ts";
 import { logActivity } from "./activity.ts";
 import { normalize } from "./parse-message.ts";
 import { SKILLS } from "./skills.ts";
@@ -67,8 +67,8 @@ export function importEmployeesCsv(orgId: number, text: string, actor: string): 
       const avail = parseAvailability(get(idx.avail) || "L-V 06:00-15:00");
       if (get(idx.avail) && !avail.length) errors.push(`Fila ${i + 2}: disponibilidad «${get(idx.avail)}» no reconocida; se usa L-V 06:00-15:00.`);
       const id = run(
-        "INSERT INTO employees (org_id, name, phone, email, zone, weekly_hours, skills) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        orgId, name, get(idx.phone) || null, get(idx.email) || null, get(idx.zone) || null, hours, skills.join(","),
+        "INSERT INTO employees (org_id, name, phone, email, zone, weekly_hours, skills, report_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        orgId, name, get(idx.phone) || null, get(idx.email) || null, get(idx.zone) || null, hours, skills.join(","), newReportToken(),
       );
       for (const a of avail.length ? avail : parseAvailability("L-V 06:00-15:00")) {
         run("INSERT INTO availability (employee_id, weekday, start, end) VALUES (?, ?, ?, ?)", id, a.weekday, a.start, a.end);

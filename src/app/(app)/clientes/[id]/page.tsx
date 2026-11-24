@@ -1,3 +1,4 @@
+import { orgTimezone } from "@/lib/queries.ts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session.ts";
@@ -11,6 +12,7 @@ export const metadata = { title: "Cliente" };
 
 export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { id } = await params;
   const c = get<{ id: number; name: string; contact_name: string | null; contact_phone: string | null; contact_email: string | null }>(
     "SELECT * FROM clients WHERE org_id = ? AND id = ?", user.orgId, Number(id),
@@ -85,7 +87,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             {incidents.map((i) => (
               <li key={i.id}>
                 <Link href={`/incidencias/${i.id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm hover:bg-slate-50">
-                  <span className="min-w-0 truncate">{i.title} <span className="text-slate-500">· {formatTimestamp(i.created_at)}</span></span>
+                  <span className="min-w-0 truncate">{i.title} <span className="text-slate-500">· {formatTimestamp(i.created_at, tz)}</span></span>
                   <StatusBadge map={INCIDENT_STATUS} status={i.status} />
                 </Link>
               </li>

@@ -1,13 +1,17 @@
 // Read models for pages. All org-scoped.
 
 import { all, get } from "./db.ts";
-import { addDays, todayIn } from "./dates.ts";
+import { addDays, DEFAULT_TZ, todayIn } from "./dates.ts";
 import type { Directory } from "./parse-message.ts";
 import { CASE_SELECT, type CaseRow } from "./coverage.ts";
 
+/** IANA timezone of the organisation (all dates and times shown in its wall clock). */
+export function orgTimezone(orgId: number): string {
+  return get<{ timezone: string }>("SELECT timezone FROM organizations WHERE id = ?", orgId)?.timezone ?? DEFAULT_TZ;
+}
+
 export function orgToday(orgId: number): string {
-  const tz = get<{ timezone: string }>("SELECT timezone FROM organizations WHERE id = ?", orgId)?.timezone;
-  return todayIn(tz);
+  return todayIn(orgTimezone(orgId));
 }
 
 export function directory(orgId: number): Directory {

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/session.ts";
 import { all } from "@/lib/db.ts";
 import { CASE_SELECT, type CaseRow } from "@/lib/coverage.ts";
-import { orgToday } from "@/lib/queries.ts";
+import { orgToday, orgTimezone } from "@/lib/queries.ts";
 import { formatDateRelative, formatTimestamp } from "@/lib/dates.ts";
 import { CASE_STATUS, EmptyState, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 
@@ -10,6 +10,7 @@ export const metadata = { title: "Coberturas" };
 
 export default async function CasesPage({ searchParams }: { searchParams: Promise<{ estado?: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { estado = "pendientes" } = await searchParams;
   const today = orgToday(user.orgId);
 
@@ -58,7 +59,7 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
                     {c.title} · <span className="num">{c.start}–{c.end}</span>
                     {c.original_name ? ` · ausente: ${c.original_name}` : ""}
                     {c.resolved_name ? ` · cubre: ${c.resolved_name}` : ""}
-                    {c.resolved_at ? ` · ${formatTimestamp(c.resolved_at)}` : ""}
+                    {c.resolved_at ? ` · ${formatTimestamp(c.resolved_at, tz)}` : ""}
                   </div>
                   <StatusBadge map={CASE_STATUS} status={c.status} className="mt-0.5 sm:hidden" />
                 </div>

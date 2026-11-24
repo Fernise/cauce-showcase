@@ -19,7 +19,7 @@ const MARKS: Record<string, { glyph: GlyphKind; color: string }> = {
   "incident.note": { glyph: "hollow", color: "text-picon-4" },
 };
 
-export function ActivityList({ items, linkEntities = true }: { items: Item[]; linkEntities?: boolean }) {
+export function ActivityList({ items, tz, linkEntities = true }: { items: Item[]; tz: string; linkEntities?: boolean }) {
   if (!items.length) return <p className="text-sm text-picon-3">Sin actividad todavía.</p>;
   return (
     <ol className="flex flex-col">
@@ -30,7 +30,7 @@ export function ActivityList({ items, linkEntities = true }: { items: Item[]; li
           <>
             <span className="text-picon">{a.summary}</span>
             <span className="num mt-0.5 block text-[0.8125rem] text-picon-3">
-              {formatTimestamp(a.created_at)}
+              {formatTimestamp(a.created_at, tz)}
               {a.actor ? ` · ${a.actor}` : ""}
             </span>
           </>

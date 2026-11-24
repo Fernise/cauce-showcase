@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session.ts";
 import { all } from "@/lib/db.ts";
-import { orgToday } from "@/lib/queries.ts";
+import { orgToday, orgTimezone } from "@/lib/queries.ts";
 import { formatRange, formatTimestamp } from "@/lib/dates.ts";
 import { REASON_LABELS, type ReasonCategory } from "@/lib/parse-message.ts";
+import { sourceLabel } from "@/lib/self-report.ts";
 import { Badge, EmptyState, Initials, PageHeader, Tabs } from "@/components/ui";
 
 export const metadata = { title: "Ausencias" };
@@ -15,6 +16,7 @@ type Row = {
 
 export default async function AbsencesPage({ searchParams }: { searchParams: Promise<{ ver?: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { ver = "actuales" } = await searchParams;
   const today = orgToday(user.orgId);
   const where = ver === "pasadas" ? "a.end_date < ?" : "a.end_date >= ?";
@@ -51,7 +53,7 @@ export default async function AbsencesPage({ searchParams }: { searchParams: Pro
                   <div className="truncate text-sm font-medium">{a.name}</div>
                   <div className="truncate text-xs text-slate-500">
                     <span className="first-letter:uppercase">{formatRange(a.start_date, a.end_date, today)}</span> · {REASON_LABELS[a.reason_category]}
-                    {a.reason ? ` · ${a.reason}` : ""} · registrada {formatTimestamp(a.created_at)}
+                    {a.reason ? ` · ${a.reason}` : ""} · registrada {formatTimestamp(a.created_at, tz)}{sourceLabel(a.source) ? ` · ${sourceLabel(a.source)}` : ""}
                   </div>
                 </div>
                 {a.status === "cancelled" ? (

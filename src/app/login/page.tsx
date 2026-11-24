@@ -5,7 +5,8 @@ import { LoginForm } from "./form";
 
 export const metadata = { title: "Entrar" };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ restablecida?: string }> }) {
+  const { restablecida } = await searchParams;
   if (await currentUser()) redirect("/");
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
@@ -37,7 +38,13 @@ export default async function LoginPage() {
           <p className="mt-1 mb-6 text-sm text-picon-3">
             Demo: <span className="num font-semibold text-picon-2">demo@cauce.app</span> / <span className="num font-semibold text-picon-2">demo1234</span>
           </p>
+          {restablecida && (
+            <p className="mb-4 text-sm font-medium text-mar" role="status">Contraseña actualizada. Ya puedes entrar.</p>
+          )}
           <LoginForm />
+          <p className="mt-6 text-sm text-picon-3">
+            ¿Has olvidado la contraseña? Pide a tu administrador un enlace para restablecerla.
+          </p>
         </div>
       </section>
     </div>

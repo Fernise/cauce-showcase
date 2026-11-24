@@ -69,3 +69,36 @@ personal / otro) — never the raw message or a free-text detail. Enforced in `r
 Client incident messages are still stored (needed to handle the complaint); coordinators should avoid
 adding health details there.
 
+
+### D-014 · Employee self-report via a permanent personal link — Accepted 2026-11-24 (founder)
+Each employee has one permanent unguessable link (`/a/<report_token>`, 144 bits, unique column on `employees`) where they report
+an absence themselves; the link is the credential (no login), same model as the offer links. Safeguards: only the reason
+category is collected (D-012, no free text at all); dates validated in the org timezone and capped (≤ 31 days, ≤ 90 days ahead,
+not in the past); overlapping active absences are refused; max 5 reports per employee per day; coordinators can regenerate
+the link (old one dies, logged); deactivating an employee kills the link. Absences are stored with `source = 'self_report'` and
+shown as "Aviso de la propia persona". Schema changes for existing databases go through `migrate()` in `db.ts`
+(`addColumnIfMissing`), because `CREATE TABLE IF NOT EXISTS` never alters existing tables.
+
+### D-015 · Roles (admin / coordinator) and password recovery without email — Accepted 2026-11-24 (founder)
+Two roles: `admin` manages users (invite, role, deactivate, reset links); `coordinator` does everything operational.
+Each org must always keep one active admin (enforced in `src/lib/users.ts`). Authorization is re-checked in the DB inside
+every function, not just hidden in the UI. Deactivation deletes sessions; `userForToken()` and `login()` ignore inactive users.
+No SMTP or paid service: an admin generates a one-time link (invite 7 days, password reset 24 h) and sends it by WhatsApp
+(`wa.me` deep link) or any channel. Only the sha256 of the token is stored (new table `user_tokens`); the raw link is shown once.
+Links are single-use, revocable and replaced by a newer one. A reset deletes all of that user's sessions; an own password change
+needs the current password and deletes the other sessions. Passwords: 10–200 characters. Revisit with email delivery if the pilot asks.
+
+### D-016 · In-process hourly scheduler for the shift window — Accepted 2026-11-24 (founder)
+**Context:** shifts were only generated up to the end of next week (T-017); the pilot runs on one small VPS.
+**Decision:** a Next.js `instrumentation.ts` hook starts an hourly in-process job (`src/lib/scheduler.ts`) that
+creates missing shifts for every organisation; it never edits existing shifts. `npm run shifts:roll` does the
+same for cron; `CAUCE_SCHEDULER=off` disables the in-process job (needed only if more than one process runs).
+**Why:** no extra infrastructure (no cron container, no queue) and idempotent, so double runs are harmless.
+**Revisit when:** more than one app process or a second server.
+
+### D-017 · One active absence per person per day; finished services are history — Accepted 2026-11-24 (founder; from review T-021)
+`registerAbsence` rejects an absence that overlaps an active one of the same person (checked in the write
+transaction), so a self-report and a coordinator can't both register the same notice; extra days are registered
+separately. Absences never reopen services that already ended today, and direct assignment is refused for a
+finished service (a service in progress can still be assigned: the replacement arrives late). Offers keep the
+stricter D-009 rule (not after the start).

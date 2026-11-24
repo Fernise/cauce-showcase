@@ -2,7 +2,7 @@
 // orgId and refuses ids that don't belong to it. Parsers turn raw form data into typed input and throw
 // ValidationError with Spanish messages; writers append an activity event for each change.
 
-import { all, get, run, tx } from "./db.ts";
+import { all, get, newReportToken, run, tx } from "./db.ts";
 import { logActivity } from "./activity.ts";
 import { weekdayName } from "./dates.ts";
 import { parseSkills, SKILLS } from "./skills.ts";
@@ -94,6 +94,7 @@ export function parseEmployeeForm(raw: Raw): EmployeeInput {
 export type EmployeeRow = {
   id: number; org_id: number; name: string; phone: string | null; email: string | null; zone: string | null;
   lat: number | null; lng: number | null; weekly_hours: number; skills: string; active: number; notes: string | null;
+  report_token: string | null;
 };
 
 export function getEmployee(orgId: number, id: number): EmployeeRow | undefined {
@@ -133,8 +134,8 @@ function writeAvailability(employeeId: number, windows: AvailabilityWindow[]): v
 export function createEmployee(orgId: number, input: EmployeeInput, actor: string): number {
   return tx(() => {
     const id = run(
-      "INSERT INTO employees (org_id, name, phone, email, zone, lat, lng, weekly_hours, skills, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      orgId, input.name, input.phone, input.email, input.zone.name, input.zone.lat, input.zone.lng, input.weeklyHours, input.skills.join(","), input.notes,
+      "INSERT INTO employees (org_id, name, phone, email, zone, lat, lng, weekly_hours, skills, notes, report_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      orgId, input.name, input.phone, input.email, input.zone.name, input.zone.lat, input.zone.lng, input.weeklyHours, input.skills.join(","), input.notes, newReportToken(),
     );
     writeAvailability(id, input.availability);
     logActivity(orgId, "employee.created", `Alta de personal: ${input.name}`, { type: "employee", id }, actor);

@@ -1,7 +1,7 @@
 // Demo dataset: "Limpiezas Atlántico S.L." (Tenerife). Dates are relative to today.
 // Usage: npm run demo:reset   (deletes and recreates the SQLite file)
 
-import { db, dbPath, SCHEMA, all, get, run, tx } from "../src/lib/db.ts";
+import { db, dbPath, migrate, newReportToken, SCHEMA, all, get, run, tx } from "../src/lib/db.ts";
 
 // Drop and recreate tables in place (keeps the file, so a running server sees the new data).
 const path = dbPath();
@@ -11,6 +11,7 @@ for (const { name } of all<{ name: string }>("SELECT name FROM sqlite_master WHE
   conn.exec(`DROP TABLE IF EXISTS "${name}"`);
 }
 conn.exec(SCHEMA);
+migrate(conn);
 const { hashPassword } = await import("../src/lib/auth.ts");
 const { formatDateShort, addDays, hoursBetween, isoWeekday, startOfWeek, todayIn, toMinutes } = await import("../src/lib/dates.ts");
 const { distanceKm } = await import("../src/lib/geo.ts");
@@ -36,7 +37,7 @@ const jitter = (n: number, i: number) => n + (((i * 7919) % 100) - 50) / 5000;
 
 // ---------- Organization & users ----------
 const orgId = run("INSERT INTO organizations (name) VALUES (?)", "Limpiezas Atlántico S.L.");
-const carmenId = run("INSERT INTO users (org_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'owner')", orgId, "Carmen Morales", "demo@cauce.app", hashPassword("demo1234"));
+const carmenId = run("INSERT INTO users (org_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'admin')", orgId, "Carmen Morales", "demo@cauce.app", hashPassword("demo1234"));
 run("INSERT INTO users (org_id, name, email, password_hash) VALUES (?, ?, ?, ?)", orgId, "Jonay Pérez", "jonay@cauce.app", hashPassword("demo1234"));
 
 // ---------- Employees ----------
@@ -93,8 +94,8 @@ const emps: Emp[] = EMPLOYEES.map(([name, zone, hours, skills, profile], i) => {
   const phone = `6${String(10000000 + ((i * 7654321) % 89999999)).padStart(8, "0")}`;
   const email = name.split(" ")[0].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") + `.${i + 1}@ejemplo.es`;
   const id = run(
-    "INSERT INTO employees (org_id, name, phone, email, zone, lat, lng, weekly_hours, skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    orgId, name, phone, email, zone, jitter(lat, i), jitter(lng, i + 3), hours, skills,
+    "INSERT INTO employees (org_id, name, phone, email, zone, lat, lng, weekly_hours, skills, report_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    orgId, name, phone, email, zone, jitter(lat, i), jitter(lng, i + 3), hours, skills, newReportToken(),
   );
   const p = PROFILES[profile];
   for (const d of p.days) run("INSERT INTO availability (employee_id, weekday, start, end) VALUES (?, ?, ?, ?)", id, d, p.start, p.end);
@@ -370,3 +371,5 @@ console.log(`Demo data created in ${path} (today = ${TODAY})`);
 console.table(counts);
 console.log("Unassigned templates:", templates.filter((t) => !t.employeeId).length);
 console.log("Login: demo@cauce.app / demo1234");
+const sample = get<{ name: string; report_token: string }>("SELECT name, report_token FROM employees WHERE org_id = ? ORDER BY id LIMIT 1", orgId)!;
+console.log(`Employee self-report link (${sample.name}): http://localhost:3000/a/${sample.report_token}`);

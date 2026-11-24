@@ -14,7 +14,7 @@
   <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-191816">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-191816">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-node%3Asqlite-191816">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-53%20passing-1d4e6b">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-91%20passing-1d4e6b">
   <img alt="UI language" src="https://img.shields.io/badge/UI-espa%C3%B1ol-a3351f">
 </p>
 
@@ -117,9 +117,10 @@ Status is never colour alone — every state has a shape and a word. Type is Arc
 
 | Area | What's there |
 |---|---|
-| **Coverage** | Absence intake from free text · coverage cases · ranked candidates with reasons, trade-offs and excluded list · WhatsApp/copy offers · employee response page · direct assignment · close as cancelled/unresolved · full per-case history |
+| **Coverage** | Absence intake from free text · employees report their own absence from a personal link (no app, no login) · coverage cases · ranked candidates with reasons, trade-offs and excluded list · WhatsApp/copy offers · employee response page · direct assignment · close as cancelled/unresolved · full per-case history |
 | **Incidents** | Intake from a client's message · auto-linking to site, last service and responsible employee · owner, status, notes · drafted client reply |
-| **Planning** | Day view per site · week grid with one mark per service so gaps stand out |
+| **Planning** | Day view per site · week grid with one mark per service so gaps stand out · recurring services keep rolling forward on their own, and know who is already absent |
+| **Team** | Admin and coordinator roles · invite and password-reset links sent over WhatsApp (no email server) |
 | **Data** | Staff (skills, weekly availability, contract hours, zone), clients, sites (access notes, required skills), recurring services with automatic shift generation · CSV import from Excel |
 | **Dashboard** | Coverage today/tomorrow · open cases and incidents · average time-to-cover (the value metric) · activity timeline |
 
@@ -128,6 +129,7 @@ Status is never colour alone — every state has a shape and a word. Type is Arc
 - **Multi-tenant from day one** — every query is scoped by organisation, including joins; ids from forms are re-checked server-side.
 - **Data minimisation (RGPD)** — absences store only the reason *category*; the employee's message and any health detail are read in memory to fill the form and never persisted.
 - **Site access notes** (keys, alarm codes) reach an employee's phone only after they are confirmed on that service.
+- Invite and reset links are single-use, expire, are stored only as hashes, and die if the admin who issued them loses access.
 - Response links are unguessable tokens that expire when the service starts · login throttling · scrypt password hashes · httpOnly session cookies.
 
 ## Architecture
@@ -179,7 +181,7 @@ employee's phone) → *Acepto* → back on the case: covered, schedule and histo
 Try *Ausencia ambigua* and *Queja de cliente* too.
 
 ```bash
-npm test               # 53 tests
+npm test               # 91 tests
 npm run typecheck && npm run lint && npm run build
 ```
 

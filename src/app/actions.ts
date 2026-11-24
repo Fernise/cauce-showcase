@@ -6,9 +6,9 @@ import { revalidatePath } from "next/cache";
 import { login, logout, SESSION_COOKIE } from "@/lib/auth.ts";
 import { requireUser } from "@/lib/session.ts";
 import { understandMessage } from "@/lib/ai.ts";
-import { directory, orgToday } from "@/lib/queries.ts";
+import { directory, orgTimezone, orgToday } from "@/lib/queries.ts";
 import {
-  affectedShifts, assignDirectly, cancelAbsence, closeCase, createOffer, registerAbsence, respondOnBehalf, respondToOffer,
+  AbsenceOverlapError, affectedShifts, assignDirectly, cancelAbsence, closeCase, createOffer, registerAbsence, respondOnBehalf, respondToOffer,
   withdrawOffer, accessNotesForToken, type OfferResponse,
 } from "@/lib/coverage.ts";
 import { addIncidentNote, assignIncidentOwner, createIncident, setIncidentStatus } from "@/lib/incidents.ts";
@@ -18,6 +18,7 @@ import { logActivity } from "@/lib/activity.ts";
 import { isValidDate, nowTimeIn } from "@/lib/dates.ts";
 import { baseUrl } from "@/lib/messages.ts";
 import { importEmployeesCsv } from "@/lib/import.ts";
+import { regenerateReportToken } from "@/lib/self-report.ts";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const num = (fd: FormData, k: string) => Number(fd.get(k));
@@ -35,7 +36,9 @@ async function requestOrigin(): Promise<string> {
 export async function loginAction(_prev: string | null, fd: FormData): Promise<string | null> {
   const h = await headers();
   const source = h.get("x-forwarded-for")?.split(",")[0].trim() ?? h.get("x-real-ip") ?? "local";
-  const session = await login(str(fd, "email"), str(fd, "password"), source);
+  const rawPassword = fd.get("password");
+  // Passwords are never trimmed (setup forms hash them as typed); only the email is.
+  const session = await login(str(fd, "email"), typeof rawPassword === "string" ? rawPassword : "", source);
   if (!session.ok) {
     return session.reason === "throttled"
       ? "Demasiados intentos. Espera unos minutos y vuelve a probar."
@@ -92,7 +95,10 @@ export async function confirmAbsenceAction(fd: FormData) {
   const employeeId = num(fd, "employeeId");
   if (!employeeId) throw new Error("Selecciona a la persona");
   if (!isValidDate(str(fd, "start")) || (str(fd, "end") && !isValidDate(str(fd, "end")))) throw new Error("Fecha no válida");
-  const { absenceId } = registerAbsence({
+  const tz = orgTimezone(user.orgId);
+  let absenceId: number;
+  try {
+    ({ absenceId } = registerAbsence({
     orgId: user.orgId,
     employeeId,
     start: str(fd, "start"),
@@ -103,7 +109,13 @@ export async function confirmAbsenceAction(fd: FormData) {
     source: str(fd, "raw") ? "mensaje" : "manual",
     actor: user.name,
     today: orgToday(user.orgId),
-  });
+    nowTime: nowTimeIn(tz),
+    }));
+  } catch (e) {
+    // Already registered (e.g. the employee reported it from their link first): show that absence instead.
+    if (e instanceof AbsenceOverlapError) redirect(`/ausencias/${e.existingId}?solapada=1`);
+    throw e;
+  }
   refresh();
   redirect(`/ausencias/${absenceId}`);
 }
@@ -174,6 +186,13 @@ export async function employeeResponseAction(_prev: EmployeeResponseState, fd: F
   const result = respondToOffer(token, str(fd, "answer") === "yes");
   refresh();
   return { result, accessNotes: result === "accepted" ? accessNotesForToken(token) : null };
+}
+
+/** Invalidates an employee's personal self-report link and issues a new one (T-020). */
+export async function regenerateReportLinkAction(fd: FormData) {
+  const user = await requireUser();
+  regenerateReportToken(user.orgId, num(fd, "employeeId"), user.name);
+  refresh();
 }
 
 // ---------- Incidents ----------

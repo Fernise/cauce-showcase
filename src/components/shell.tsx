@@ -42,10 +42,11 @@ function Count({ n }: { n: number }) {
 }
 
 export function Shell({
-  children, userName, orgName, badges, logoutAction,
+  children, userName, userRole = "Coordinación", orgName, badges, logoutAction,
 }: {
   children: React.ReactNode;
   userName: string;
+  userRole?: string;
   orgName: string;
   badges: Record<string, number>;
   logoutAction: () => Promise<void>;
@@ -102,7 +103,7 @@ export function Shell({
     <div className="flex items-center justify-between gap-2 border-t border-linea pt-3">
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold text-picon">{userName}</div>
-        <div className="text-xs text-picon-3">Coordinación</div>
+        <div className="text-xs text-picon-3">{userRole}</div>
       </div>
       <form action={logoutAction}>
         <button className="btn-ghost px-2.5" title="Cerrar sesión" aria-label="Cerrar sesión">

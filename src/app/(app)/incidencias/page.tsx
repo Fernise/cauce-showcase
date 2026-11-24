@@ -1,3 +1,4 @@
+import { orgTimezone } from "@/lib/queries.ts";
 import Link from "next/link";
 import { requireUser } from "@/lib/session.ts";
 import { all } from "@/lib/db.ts";
@@ -10,6 +11,7 @@ export const metadata = { title: "Incidencias" };
 
 export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ estado?: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { estado = "abiertas" } = await searchParams;
   const where = estado === "resueltas" ? "i.status = 'resuelta'" : estado === "todas" ? "1 = 1" : "i.status != 'resuelta'";
   const rows = all<IncidentRow>(
@@ -43,7 +45,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
                 <div className="min-w-0">
                   <div className="truncate text-[0.9375rem] font-semibold">{i.title}</div>
                   <div className="truncate text-sm text-picon-3">
-                    {INCIDENT_LABELS[i.type]} · {i.location_name ?? i.client_name ?? "Sin centro"} · <span className="num">{formatTimestamp(i.created_at)}</span>
+                    {INCIDENT_LABELS[i.type]} · {i.location_name ?? i.client_name ?? "Sin centro"} · <span className="num">{formatTimestamp(i.created_at, tz)}</span>
                     {i.owner_name ? ` · ${i.owner_name}` : " · sin responsable"}
                   </div>
                   <div className="mt-0.5 flex gap-4 sm:hidden">

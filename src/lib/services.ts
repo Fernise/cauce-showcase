@@ -7,10 +7,13 @@
 //  - same kind of shifts on weekdays the template no longer runs are cancelled;
 //  - shifts with any coverage case, cancelled shifts and shifts in the past are never touched.
 // Removing a template cancels its future case-less shifts and detaches the rest (FK), then deletes it.
+//  - a shift that would go to a default employee who has an active absence that day is created/left
+//    uncovered with a coverage case linked to that absence (T-018), exactly as if the absence came later.
+// The window rolls forward on its own: rollShiftWindow() only creates missing shifts (T-017).
 
 import { all, get, run, tx } from "./db.ts";
 import { logActivity } from "./activity.ts";
-import { addDays, dateRange, hoursBetween, isoWeekday, startOfWeek, weekdayName, weekdayShort } from "./dates.ts";
+import { addDays, dateRange, formatDateShort, hoursBetween, isoWeekday, nowTimeIn, startOfWeek, todayIn, weekdayName, weekdayShort } from "./dates.ts";
 import { parseSkills, skillLabel } from "./skills.ts";
 import { getEmployee, getLocation, parseSkillKeys, type EmployeeRow } from "./admin.ts";
 import { checkLength, failIf, isTime, NotFoundError, text, ValidationError, type FormValues, type Raw } from "./validation.ts";
@@ -88,7 +91,7 @@ function checkEmployee(orgId: number, employeeId: number | null, currentId: numb
 
 // ---------- generation ----------
 
-export type Generation = { created: number; updated: number; cancelled: number };
+export type Generation = { created: number; updated: number; cancelled: number; cases: number };
 
 type ExistingShift = {
   id: number; date: string; start: string; end: string; title: string; required_skills: string;
@@ -99,12 +102,42 @@ function isPast(date: string, end: string, clock: Clock): boolean {
   return date < clock.today || (date === clock.today && clock.time !== undefined && end <= clock.time);
 }
 
-/** Must run inside a transaction (the public wrappers add one). */
-function generate(orgId: number, t: { id: number; location_id: number; name: string; weekdays: string; start: string; end: string; required_skills: string; default_employee_id: number | null }, clock: Clock): Generation {
+type TemplateForGeneration = { id: number; location_id: number; name: string; weekdays: string; start: string; end: string; required_skills: string; default_employee_id: number | null };
+
+/** Active absence of this employee covering this date, if any. */
+function absenceOn(orgId: number, employeeId: number, date: string): number | null {
+  return get<{ id: number }>(
+    "SELECT id FROM absences WHERE org_id = ? AND employee_id = ? AND status = 'active' AND ? BETWEEN start_date AND end_date ORDER BY id LIMIT 1",
+    orgId, employeeId, date,
+  )?.id ?? null;
+}
+
+/** The shift's titular is absent: leave it uncovered and open a coverage case linked to the absence (T-018). */
+function openCaseForAbsence(orgId: number, shiftId: number, absenceId: number, employeeId: number, t: TemplateForGeneration, date: string, locationName: string): void {
+  run("UPDATE shifts SET employee_id = NULL, status = 'uncovered' WHERE org_id = ? AND id = ?", orgId, shiftId);
+  const caseId = run(
+    "INSERT INTO coverage_cases (org_id, shift_id, absence_id, original_employee_id) VALUES (?, ?, ?, ?)",
+    orgId, shiftId, absenceId, employeeId,
+  );
+  logActivity(orgId, "case.opened", `Servicio sin cubrir: ${locationName}, ${formatDateShort(date)} ${t.start}–${t.end}`, { type: "case", id: caseId }, "Cauce");
+}
+
+/**
+ * Must run inside a transaction (the public wrappers add one).
+ * createOnly: only add missing shifts (used when rolling the window forward), never touch existing ones.
+ */
+function generate(orgId: number, template: TemplateForGeneration, clock: Clock, createOnly = false): Generation {
+  // A deactivated titular gets no new services: they are generated uncovered (the template keeps its titular,
+  // so reactivating the person restores the normal pattern on the next generation).
+  const titularActive = template.default_employee_id !== null &&
+    !!get("SELECT 1 FROM employees WHERE org_id = ? AND id = ? AND active = 1", orgId, template.default_employee_id);
+  const t = titularActive ? template : { ...template, default_employee_id: null };
   const days = new Set(t.weekdays.split(",").map(Number));
   const to = windowEnd(clock.today);
   const status = t.default_employee_id ? "scheduled" : "uncovered";
-  const out: Generation = { created: 0, updated: 0, cancelled: 0 };
+  const out: Generation = { created: 0, updated: 0, cancelled: 0, cases: 0 };
+  const locationName = get<{ name: string }>("SELECT name FROM locations WHERE org_id = ? AND id = ?", orgId, t.location_id)?.name ?? t.name;
+  const titularAbsence = (date: string) => (t.default_employee_id ? absenceOn(orgId, t.default_employee_id, date) : null);
 
   const existing = all<ExistingShift>(
     `SELECT s.id, s.date, s.start, s.end, s.title, s.required_skills, s.employee_id, s.status,
@@ -114,7 +147,7 @@ function generate(orgId: number, t: { id: number; location_id: number; name: str
   );
   const seen = new Set(existing.map((s) => s.date));
 
-  for (const s of existing) {
+  for (const s of createOnly ? [] : existing) {
     if (s.has_case || !["scheduled", "uncovered"].includes(s.status) || isPast(s.date, s.end, clock)) continue;
     if (!days.has(isoWeekday(s.date))) {
       run("UPDATE shifts SET status = 'cancelled' WHERE org_id = ? AND id = ?", orgId, s.id);
@@ -127,18 +160,66 @@ function generate(orgId: number, t: { id: number; location_id: number; name: str
         t.name, t.start, t.end, t.required_skills, t.default_employee_id, status, orgId, s.id,
       );
       out.updated++;
+      const absenceId = titularAbsence(s.date);
+      if (absenceId) {
+        openCaseForAbsence(orgId, s.id, absenceId, t.default_employee_id!, t, s.date, locationName);
+        out.cases++;
+      }
     }
   }
 
   for (const date of dateRange(clock.today, to)) {
     if (!days.has(isoWeekday(date)) || seen.has(date) || isPast(date, t.end, clock)) continue;
-    run(
+    const shiftId = run(
       "INSERT INTO shifts (org_id, template_id, location_id, title, date, start, end, required_skills, employee_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       orgId, t.id, t.location_id, t.name, date, t.start, t.end, t.required_skills, t.default_employee_id, status,
     );
     out.created++;
+    const absenceId = titularAbsence(date);
+    if (absenceId) {
+      openCaseForAbsence(orgId, shiftId, absenceId, t.default_employee_id!, t, date, locationName);
+      out.cases++;
+    }
   }
   return out;
+}
+
+/**
+ * T-017: keep every recurring service generated up to the end of next week, so the schedule never runs dry.
+ * Only creates missing shifts (existing ones, edited or not, are left alone). Idempotent; safe to run hourly.
+ */
+export function rollShiftWindow(orgId: number, clock: Clock): Generation {
+  return tx(() => {
+    // Read under the write lock, so a template deleted by another process can't be half-rolled.
+    const templates = all<TemplateForGeneration>(
+      "SELECT id, location_id, name, weekdays, start, end, required_skills, default_employee_id FROM service_templates WHERE org_id = ? ORDER BY id",
+      orgId,
+    );
+    const total: Generation = { created: 0, updated: 0, cancelled: 0, cases: 0 };
+    for (const t of templates) {
+      const g = generate(orgId, t, clock, true);
+      total.created += g.created;
+      total.cases += g.cases;
+    }
+    if (total.created > 0) {
+      logActivity(
+        orgId, "shifts.rolled",
+        `Planificación ampliada hasta el ${formatDateShort(windowEnd(clock.today))}: ${total.created} servicio(s) nuevo(s)` +
+          (total.cases ? ` · ${total.cases} sin cubrir por ausencias ya avisadas` : ""),
+        undefined, "Cauce",
+      );
+    }
+    return total;
+  });
+}
+
+/** Rolls the window for every organisation, each in its own timezone. Returns shifts created. */
+export function rollAllOrganizations(now = new Date()): number {
+  let created = 0;
+  for (const o of all<{ id: number; timezone: string }>("SELECT id, timezone FROM organizations ORDER BY id")) {
+    created += rollShiftWindow(o.id, { today: todayIn(o.timezone, now), time: nowTimeIn(o.timezone, now) }).created;
+  }
+  return created;
 }
 
 export function regenerateShifts(orgId: number, templateId: number, clock: Clock): Generation {
@@ -154,7 +235,7 @@ export function weekdaysLabel(days: number[]): string {
 }
 
 function describeGeneration(g: Generation): string {
-  return `${g.created} creado(s), ${g.updated} actualizado(s), ${g.cancelled} anulado(s)`;
+  return `${g.created} creado(s), ${g.updated} actualizado(s), ${g.cancelled} anulado(s)` + (g.cases ? `, ${g.cases} sin cubrir por ausencia` : "");
 }
 
 export function createTemplate(orgId: number, locationId: number, input: TemplateInput, actor: string, clock: Clock): { id: number; clientId: number; generation: Generation } {

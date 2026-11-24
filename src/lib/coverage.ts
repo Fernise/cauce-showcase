@@ -29,16 +29,44 @@ export function affectedShifts(orgId: number, employeeId: number, start: string,
   );
 }
 
+/** An active absence of the same person already overlaps the requested dates (one source of truth per day). */
+export class AbsenceOverlapError extends Error {
+  readonly existingId: number;
+  constructor(existingId: number) {
+    super("Ya hay una ausencia activa de esta persona que se solapa con esas fechas");
+    this.existingId = existingId;
+  }
+}
+
+/**
+ * Services of the employee in the range that an absence would still affect: scheduled, from today on, and not
+ * already finished (a 20:00 "hoy" must not rewrite the morning's completed service). nowTime omitted = whole day.
+ */
+export function pendingAffectedShifts(orgId: number, employeeId: number, start: string, end: string, today: string, nowTime?: string): ShiftRow[] {
+  return affectedShifts(orgId, employeeId, start < today ? today : start, end)
+    .filter((s) => !(nowTime && s.date === today && s.end <= nowTime));
+}
+
 export function registerAbsence(input: {
   orgId: number; employeeId: number; start: string; end: string; reason: string | null;
   reasonCategory: ReasonCategory; rawMessage: string | null; source: string; actor: string; today: string;
+  /** Org-local "HH:MM" now; today's services that already ended are left alone. */
+  nowTime?: string;
 }): { absenceId: number; caseIds: number[] } {
-  const employee = get<{ name: string }>("SELECT name FROM employees WHERE org_id = ? AND id = ?", input.orgId, input.employeeId);
-  if (!employee) throw new Error("Empleado no encontrado");
   if (!isValidDate(input.start) || !isValidDate(input.end)) throw new Error("Fecha no válida");
   if (input.end < input.start) throw new Error("La fecha de fin es anterior a la de inicio");
+  // D-012: only one of the fixed categories may ever be stored (never free text smuggled in the form).
+  if (!Object.hasOwn(REASON_LABELS, input.reasonCategory)) throw new Error("Motivo no válido");
 
   return tx(() => {
+    const employee = get<{ name: string }>("SELECT name FROM employees WHERE org_id = ? AND id = ?", input.orgId, input.employeeId);
+    if (!employee) throw new Error("Empleado no encontrado");
+    // Checked under the write lock, so a self-report and a coordinator can't both register the same days.
+    const overlap = get<{ id: number }>(
+      "SELECT id FROM absences WHERE org_id = ? AND employee_id = ? AND status = 'active' AND start_date <= ? AND end_date >= ? ORDER BY id LIMIT 1",
+      input.orgId, input.employeeId, input.end, input.start,
+    );
+    if (overlap) throw new AbsenceOverlapError(overlap.id);
     // Data minimisation (RGPD, decision D-012): absences may reveal health data, so only the reason
     // *category* is stored — never the employee's message or a free-text detail.
     const absenceId = run(
@@ -50,7 +78,7 @@ export function registerAbsence(input: {
     logActivity(input.orgId, "absence.created", `${employee.name} no podrá trabajar (${range}) · ${REASON_LABELS[input.reasonCategory]}`, { type: "absence", id: absenceId }, input.actor);
 
     const caseIds: number[] = [];
-    for (const s of affectedShifts(input.orgId, input.employeeId, input.start < input.today ? input.today : input.start, input.end)) {
+    for (const s of pendingAffectedShifts(input.orgId, input.employeeId, input.start, input.end, input.today, input.nowTime)) {
       run("UPDATE shifts SET employee_id = NULL, status = 'uncovered' WHERE id = ?", s.id);
       const caseId = run(
         "INSERT INTO coverage_cases (org_id, shift_id, absence_id, original_employee_id) VALUES (?, ?, ?, ?)",
@@ -71,6 +99,8 @@ export function cancelAbsence(orgId: number, absenceId: number, actor: string): 
     );
     if (!a || a.status !== "active") return;
     run("UPDATE absences SET status = 'cancelled' WHERE id = ?", absenceId);
+    // A deactivated employee gets nothing back; their services stay open for coverage.
+    const employeeActive = !!get("SELECT 1 FROM employees WHERE org_id = ? AND id = ? AND active = 1", orgId, a.employee_id);
     // Services still without anyone (open, offering or closed as "sin cobertura") go back to the employee,
     // unless another active absence of hers still covers that day — then the case moves to that absence.
     const cases = all<{ id: number; shift_id: number; date: string; shift_status: string; shift_employee: number | null }>(
@@ -89,7 +119,7 @@ export function cancelAbsence(orgId: number, absenceId: number, actor: string): 
         run("UPDATE coverage_cases SET absence_id = ? WHERE id = ?", other.id, c.id);
         continue;
       }
-      if (c.shift_status === "uncovered" && c.shift_employee === null) {
+      if (c.shift_status === "uncovered" && c.shift_employee === null && employeeActive) {
         run("UPDATE shifts SET employee_id = ?, status = 'scheduled' WHERE id = ?", a.employee_id, c.shift_id);
         restored++;
       }
@@ -317,6 +347,8 @@ export function assignDirectly(orgId: number, caseId: number, employeeId: number
   tx(() => {
     const c = getCase(orgId, caseId);
     if (!c || !OPEN.includes(c.status)) throw new Error("El caso ya no está abierto");
+    // Coordinators may still assign someone to a service in progress (they arrive late), never to a finished one.
+    if (shiftStarted(orgId, c.date, c.end)) throw new Error("Este servicio ya ha terminado: ciérralo como sin cobertura");
     const emp = get<{ name: string }>("SELECT name FROM employees WHERE org_id = ? AND id = ?", orgId, employeeId);
     if (!emp) throw new Error("Empleado no encontrado");
     const ok = eligibility(orgId, c, employeeId);

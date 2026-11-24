@@ -4,7 +4,10 @@ import { aiEnabled, aiModel } from "@/lib/ai.ts";
 import { settingsAction } from "@/app/actions";
 import { Badge, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/client";
+import { isAdminRole, roleLabel } from "@/lib/users.ts";
 import { ImportForm } from "./import-form";
+import { Equipo } from "./equipo";
+import { PasswordForm } from "./team-forms";
 
 export const metadata = { title: "Ajustes" };
 
@@ -39,6 +42,17 @@ export default async function SettingsPage() {
           </div>
         </form>
       </section>
+
+      <section id="cuenta" className="card p-5">
+        <h2 className="h-section mb-1">Mi cuenta</h2>
+        <p className="mb-4 text-sm text-picon-3">
+          {user.name} · {user.email} · {roleLabel(user.role)}. Al cambiar la contraseña se cierra la sesión en tus otros dispositivos.
+        </p>
+        <PasswordForm />
+      </section>
+
+      {/* Server-enforced: the section is only rendered for admins and listTeam()/every action re-check the role in the DB. */}
+      {isAdminRole(user.role) && <Equipo user={user} />}
 
       <section className="card p-5 text-sm">
         <h2 className="h-section mb-3">Integraciones</h2>

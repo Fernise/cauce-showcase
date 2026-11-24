@@ -1,6 +1,6 @@
 import { run } from "./db.ts";
 
-export type EntityType = "absence" | "case" | "offer" | "shift" | "incident" | "employee" | "client" | "org";
+export type EntityType = "absence" | "case" | "offer" | "shift" | "incident" | "employee" | "client" | "org" | "user";
 
 export function logActivity(
   orgId: number,

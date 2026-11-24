@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types --no-warnings 'src/**/*.test.ts'",
-    "demo:reset": "node --experimental-strip-types --no-warnings scripts/seed.ts"
+    "demo:reset": "node --experimental-strip-types --no-warnings scripts/seed.ts",
+    "shifts:roll": "node --experimental-strip-types --no-warnings scripts/roll-shifts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

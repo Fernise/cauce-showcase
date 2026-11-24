@@ -123,8 +123,9 @@ test("T-015#5: links for services that already started expire", () => {
 test("T-015#6: cancelling one of two overlapping absences keeps the service uncovered", () => {
   const h = emp("Hilda Doble", 28.469, -16.261);
   const { shiftId } = openCase(h, "2030-01-11", "07:00", "09:00", "Doble");
-  const second = cov.registerAbsence({ orgId: org, employeeId: h, start: "2030-01-11", end: "2030-01-11", reason: null, reasonCategory: "otro", rawMessage: null, source: "t", actor: "C", today: TODAY });
-  const first = get<{ id: number }>("SELECT id FROM absences WHERE employee_id = ? AND id != ? ORDER BY id LIMIT 1", h, second.absenceId)!.id;
+  // Overlaps are now rejected (T-021 #7); databases from before that rule may still contain them.
+  const second = run("INSERT INTO absences (org_id, employee_id, start_date, end_date, reason_category) VALUES (?, ?, '2030-01-11', '2030-01-11', 'otro')", org, h);
+  const first = get<{ id: number }>("SELECT id FROM absences WHERE employee_id = ? AND id != ? ORDER BY id LIMIT 1", h, second)!.id;
   cov.cancelAbsence(org, first, "C");
   assert.equal(get<{ employee_id: number | null }>("SELECT employee_id FROM shifts WHERE id = ?", shiftId)!.employee_id, null);
 });
@@ -170,4 +171,42 @@ test("D-012: absences store only the reason category (no message, no health deta
   const { absenceId } = cov.registerAbsence({ orgId: org, employeeId: p, start: "2030-02-04", end: "2030-02-04", reason: "fiebre alta", reasonCategory: "enfermedad", rawMessage: "Hola, tengo fiebre", source: "mensaje", actor: "C", today: TODAY });
   const a = get<{ reason: string | null; raw_message: string | null; reason_category: string }>("SELECT reason, raw_message, reason_category FROM absences WHERE id = ?", absenceId)!;
   assert.deepEqual([a.reason, a.raw_message, a.reason_category], [null, null, "enfermedad"]);
+});
+
+// ---------- T-021 review fixes ----------
+
+const reg = (employeeId: number, start: string, end: string, extra: Record<string, unknown> = {}) =>
+  cov.registerAbsence({ orgId: org, employeeId, start, end, reason: null, reasonCategory: "otro", rawMessage: null, source: "t", actor: "C", today: TODAY, ...extra } as Parameters<typeof cov.registerAbsence>[0]);
+
+test("T-021#7: an overlapping absence for the same person is rejected and points to the existing one", () => {
+  const p = emp("Paula Solape", 28.469, -16.261);
+  const { absenceId } = reg(p, "2030-02-04", "2030-02-06");
+  assert.throws(() => reg(p, "2030-02-06", "2030-02-08"), (e: unknown) => e instanceof cov.AbsenceOverlapError && e.existingId === absenceId);
+  assert.doesNotThrow(() => reg(p, "2030-02-07", "2030-02-08"), "adjacent new days are fine");
+});
+
+test("T-021#5: only the fixed reason categories can be stored", () => {
+  const q = emp("Queta Motivo", 28.469, -16.261);
+  assert.throws(() => reg(q, "2030-02-11", "2030-02-11", { reasonCategory: "gripe y fiebre alta" }), /Motivo no válido/);
+  assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM absences WHERE employee_id = ?", q)!.n, 0);
+});
+
+test("T-021#3: services of today that already ended are not reopened by a late 'hoy'", () => {
+  const r = emp("Rosa Tarde", 28.469, -16.261);
+  const loc = get<{ id: number }>("SELECT id FROM locations WHERE org_id = ? LIMIT 1", org)!.id;
+  const morning = run("INSERT INTO shifts (org_id, location_id, title, date, start, end, employee_id) VALUES (?, ?, 'M', '2030-02-12', '08:00', '10:00', ?)", org, loc, r);
+  const evening = run("INSERT INTO shifts (org_id, location_id, title, date, start, end, employee_id) VALUES (?, ?, 'E', '2030-02-12', '18:00', '21:00', ?)", org, loc, r);
+  const { caseIds } = reg(r, "2030-02-12", "2030-02-12", { today: "2030-02-12", nowTime: "20:00" });
+  assert.equal(caseIds.length, 1, "only the evening service (in progress) is opened");
+  assert.equal(get<{ employee_id: number }>("SELECT employee_id FROM shifts WHERE id = ?", morning)!.employee_id, r);
+  assert.equal(get<{ shift_id: number }>("SELECT shift_id FROM coverage_cases WHERE id = ?", caseIds[0])!.shift_id, evening);
+});
+
+test("T-021#6: cancelling an absence does not hand services back to a deactivated employee", () => {
+  const s = emp("Sara Baja", 28.469, -16.261);
+  const { shiftId } = openCase(s, "2030-02-13", "07:00", "09:00", "Gone");
+  const absenceId = get<{ id: number }>("SELECT id FROM absences WHERE employee_id = ? ORDER BY id DESC LIMIT 1", s)!.id;
+  run("UPDATE employees SET active = 0 WHERE id = ?", s);
+  cov.cancelAbsence(org, absenceId, "C");
+  assert.equal(get<{ employee_id: number | null }>("SELECT employee_id FROM shifts WHERE id = ?", shiftId)!.employee_id, null);
 });

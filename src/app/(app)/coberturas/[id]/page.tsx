@@ -6,7 +6,7 @@ import { all, get } from "@/lib/db.ts";
 import { getCase, rankForShift } from "@/lib/coverage.ts";
 import { tradeoffSummary, WEIGHTS, type RankedCandidate } from "@/lib/ranking.ts";
 import { formatDateRelative, formatTimestamp } from "@/lib/dates.ts";
-import { orgToday } from "@/lib/queries.ts";
+import { orgToday, orgTimezone } from "@/lib/queries.ts";
 import { confirmationMessage, whatsappLink } from "@/lib/messages.ts";
 import { REASON_LABELS, type ReasonCategory } from "@/lib/parse-message.ts";
 import { assignAction, closeCaseAction, offerAction, respondOnBehalfAction, withdrawOfferAction } from "@/app/actions";
@@ -20,6 +20,7 @@ type Offer = { id: number; employee_id: number; name: string; phone: string | nu
 
 export default async function CasePage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
+  const tz = orgTimezone(user.orgId);
   const { id } = await params;
   const c = getCase(user.orgId, Number(id));
   if (!c) notFound();
@@ -107,8 +108,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[0.9375rem] font-semibold">{o.name}</div>
                           <div className="num text-[0.8125rem] text-picon-3">
-                            Enviada {formatTimestamp(o.created_at)}
-                            {o.responded_at ? ` · respondió ${formatTimestamp(o.responded_at)}` : ""}
+                            Enviada {formatTimestamp(o.created_at, tz)}
+                            {o.responded_at ? ` · respondió ${formatTimestamp(o.responded_at, tz)}` : ""}
                           </div>
                         </div>
                         <StatusBadge map={OFFER_STATUS} status={o.status} />
@@ -231,7 +232,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <section>
             <SectionHead title="Historial" className="mb-1" />
-            <ActivityList items={timeline} linkEntities={false} />
+            <ActivityList tz={tz} items={timeline} linkEntities={false} />
           </section>
         </aside>
       </div>
